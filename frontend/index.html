@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Backupman - Automated Backup Manager</title>
+  <meta name="description" content="Backupman: schedule, monitor, and manage automated file backups with multi-destination and network path support.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ===== HEADER ===================================================== -->
+  <header id="header" role="banner">
+    <div class="app-logo" aria-label="Backupman">BACKUP<span>MAN</span></div>
+    <div class="header-status" role="status" aria-live="polite">
+      <div class="status-indicator" id="header-running" style="display:none" aria-label="Running backups">
+        <div class="dot running"></div>
+        <span id="header-running-count">1</span> running
+      </div>
+      <span id="header-clock" class="text-muted" aria-label="Current time"></span>
+    </div>
+  </header>
+
+  <!-- ===== SIDEBAR ==================================================== -->
+  <nav id="sidebar" role="navigation" aria-label="Main navigation">
+    <span class="nav-section-label">Main</span>
+    <div class="nav-item active" role="button" tabindex="0" data-page="dashboard"
+         onclick="navigateTo('dashboard')" onkeydown="if(event.key==='Enter')navigateTo('dashboard')">
+      <i class="nav-icon" aria-hidden="true">[D]</i> Dashboard
+    </div>
+    <div class="nav-item" role="button" tabindex="0" data-page="schedules"
+         onclick="navigateTo('schedules')" onkeydown="if(event.key==='Enter')navigateTo('schedules')">
+      <i class="nav-icon" aria-hidden="true">[S]</i> Schedules
+    </div>
+    <div class="nav-item" role="button" tabindex="0" data-page="history"
+         onclick="navigateTo('history')" onkeydown="if(event.key==='Enter')navigateTo('history')">
+      <i class="nav-icon" aria-hidden="true">[H]</i> Run History
+    </div>
+    <div class="nav-item" role="button" tabindex="0" data-page="progress"
+         onclick="navigateTo('progress')" onkeydown="if(event.key==='Enter')navigateTo('progress')">
+      <i class="nav-icon" aria-hidden="true">[P]</i> Progress
+    </div>
+
+    <span class="nav-section-label">System</span>
+    <div class="nav-item" role="button" tabindex="0" data-page="credentials"
+         onclick="navigateTo('credentials')" onkeydown="if(event.key==='Enter')navigateTo('credentials')">
+      <i class="nav-icon" aria-hidden="true">[C]</i> Credentials
+    </div>
+
+    <div class="sidebar-footer" aria-label="App info">
+      Backupman v1.0<br>
+      <span class="text-muted">Running in background</span>
+    </div>
+  </nav>
+
+  <!-- ===== MAIN CONTENT =============================================== -->
+  <main id="main-content" role="main">
+
+    <!-- ─── DASHBOARD ─────────────────────────────────────────────── -->
+    <section id="page-dashboard" class="page active" aria-label="Dashboard">
+
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Dashboard</h1>
+          <div class="page-subtitle">System overview and backup activity</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-secondary" onclick="initDashboard()" aria-label="Refresh dashboard">Refresh</button>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="stat-grid" role="region" aria-label="Backup statistics">
+        <div class="stat-card" aria-label="Total Schedules">
+          <div class="stat-label">Total Schedules</div>
+          <div class="stat-value" id="stat-total">-</div>
+        </div>
+        <div class="stat-card" aria-label="Enabled Schedules">
+          <div class="stat-label">Enabled</div>
+          <div class="stat-value" id="stat-enabled">-</div>
+        </div>
+        <div class="stat-card" aria-label="Total Runs">
+          <div class="stat-label">Total Runs</div>
+          <div class="stat-value" id="stat-runs">-</div>
+        </div>
+        <div class="stat-card" aria-label="Successful Runs">
+          <div class="stat-label">Successful</div>
+          <div class="stat-value success" id="stat-success">-</div>
+        </div>
+        <div class="stat-card" aria-label="Error Runs">
+          <div class="stat-label">Errors</div>
+          <div class="stat-value error" id="stat-error">-</div>
+        </div>
+        <div class="stat-card" aria-label="Running Now">
+          <div class="stat-label">Running Now</div>
+          <div class="stat-value running" id="stat-running">-</div>
+        </div>
+        <div class="stat-card" aria-label="Missed / Pending Recovery">
+          <div class="stat-label">Missed / Pending</div>
+          <div class="stat-value warning" id="stat-missed">-</div>
+        </div>
+      </div>
+
+      <!-- Activity Calendar -->
+      <div class="panel" role="region" aria-labelledby="cal-heading">
+        <div class="panel-header">
+          <span class="panel-title" id="cal-heading">Activity Calendar</span>
+          <div class="flex align-center flex-gap-md">
+            <!-- Legend -->
+            <div class="cal-legend" aria-label="Calendar legend">
+              <span>
+                <span class="cal-legend-dot" style="background:var(--color-action-light);border-color:var(--color-action)"></span>
+                Successful
+              </span>
+              <span>
+                <span class="cal-legend-dot" style="background:var(--color-error-bg);border-color:var(--color-error)"></span>
+                Has Error
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="panel-body">
+          <!-- Month navigation -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--gap-md)">
+            <div class="cal-nav" role="group" aria-label="Month navigation">
+              <button class="btn btn-secondary btn-sm" id="cal-nav-prev"
+                      onclick="calPrevMonth()" aria-label="Previous month">&lt;</button>
+              <span class="cal-month-label" id="calendar-month" aria-live="polite">—</span>
+              <button class="btn btn-secondary btn-sm" id="cal-nav-next"
+                      onclick="calNextMonth()" aria-label="Next month">&gt;</button>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="calGoToday()" aria-label="Go to current month">Today</button>
+          </div>
+          <div class="calendar-grid" id="calendar-grid" role="grid" aria-label="Monthly activity calendar"></div>
+        </div>
+      </div>
+
+      <!-- Schedule Summary Table -->
+      <div class="form-section-title">All Schedules</div>
+      <div class="table-wrapper">
+        <table aria-label="Backup schedules overview">
+          <colgroup>
+            <col style="width:22%"><col style="width:10%"><col style="width:20%">
+            <col style="width:14%"><col style="width:14%"><col style="width:120px">
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Status</th>
+              <th scope="col">Schedule</th>
+              <th scope="col">Last Run</th>
+              <th scope="col">Next Run</th>
+              <th scope="col">Action</th>
+            </tr>
+          </thead>
+          <tbody id="dash-sched-body">
+            <tr><td colspan="6"><div class="empty-state"><div class="empty-state-title">Loading...</div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── SCHEDULES ─────────────────────────────────────────────── -->
+    <section id="page-schedules" class="page" aria-label="Schedules">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Schedules</h1>
+          <div class="page-subtitle">Manage backup jobs, sources, and destinations</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-secondary" onclick="loadSchedulesList()">Refresh</button>
+          <button class="btn btn-primary" id="btn-new-sched" onclick="openNewModal()">+ New Schedule</button>
+        </div>
+      </div>
+
+      <div class="table-wrapper">
+        <table aria-label="Backup schedules">
+          <colgroup>
+            <col style="width:20%"><col style="width:9%"><col style="width:22%">
+            <col style="width:18%"><col style="width:10%"><col style="width:10%"><col>
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Status</th>
+              <th scope="col">Source</th>
+              <th scope="col">Schedule</th>
+              <th scope="col">Destinations</th>
+              <th scope="col">Next Run</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="sched-table-body">
+            <tr><td colspan="7"><div class="empty-state"><div class="empty-state-title">Loading...</div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── HISTORY ───────────────────────────────────────────────── -->
+    <section id="page-history" class="page" aria-label="Run History">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Run History</h1>
+          <div class="page-subtitle">All backup execution records — click a row for details</div>
+        </div>
+        <div class="page-actions">
+          <select id="history-filter-sched" onchange="loadHistory()"
+                  style="width:180px;padding:7px 28px 7px 8px" aria-label="Filter by schedule">
+            <option value="">All Schedules</option>
+          </select>
+          <select id="history-limit" onchange="loadHistory()"
+                  style="width:110px;padding:7px 28px 7px 8px" aria-label="Row limit">
+            <option value="50">50 rows</option>
+            <option value="100" selected>100 rows</option>
+            <option value="500">500 rows</option>
+          </select>
+          <button class="btn btn-secondary" onclick="loadHistory()">Refresh</button>
+        </div>
+      </div>
+
+      <div class="table-wrapper">
+        <table aria-label="Run history">
+          <colgroup>
+            <col style="width:15%"><col style="width:18%"><col style="width:8%">
+            <col style="width:10%"><col style="width:8%"><col style="width:8%"><col>
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col">Started</th>
+              <th scope="col">Schedule</th>
+              <th scope="col">Status</th>
+              <th scope="col">Trigger</th>
+              <th scope="col">Duration</th>
+              <th scope="col">Copied</th>
+              <th scope="col">Error</th>
+            </tr>
+          </thead>
+          <tbody id="history-body">
+            <tr><td colspan="7"><div class="empty-state"><div class="empty-state-title">Loading...</div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── PROGRESS ──────────────────────────────────────────────── -->
+    <section id="page-progress" class="page" aria-label="Backup Progress">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Backup Progress</h1>
+          <div class="page-subtitle">Monitoring active backup tasks in real-time</div>
+        </div>
+      </div>
+
+      <div id="progress-list" class="progress-grid">
+        <div class="empty-state">
+          <div class="empty-state-title">No active backups</div>
+          <p>Running tasks will appear here automatically.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── CREDENTIALS ───────────────────────────────────────────── -->
+    <section id="page-credentials" class="page" aria-label="Network Credentials">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Network Credentials</h1>
+          <div class="page-subtitle">Stored credentials for UNC domain network path access</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-primary" onclick="openAddCredModal()">+ Add Credential</button>
+        </div>
+      </div>
+
+      <div class="alert alert-info" role="note">
+        Credentials are validated against the network path on save. Passwords are stored with base64 encoding.
+        For high-security environments, consider OS-level credential storage.
+      </div>
+
+      <div class="table-wrapper">
+        <table aria-label="Network credentials">
+          <colgroup>
+            <col style="width:22%"><col style="width:25%"><col style="width:20%">
+            <col style="width:15%"><col style="width:100px">
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col">Label</th>
+              <th scope="col">Server / Share</th>
+              <th scope="col">Username</th>
+              <th scope="col">Added</th>
+              <th scope="col">Action</th>
+            </tr>
+          </thead>
+          <tbody id="cred-table-body">
+            <tr><td colspan="5"><div class="empty-state"><div class="empty-state-title">Loading...</div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ================================================================= -->
+<!-- MODALS                                                             -->
+<!-- ================================================================= -->
+
+<!-- ─── Schedule Create / Edit Modal ────────────────────────────────── -->
+<div id="sched-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal" style="width:min(860px,96vw)">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">New Schedule</span>
+      <button class="modal-close" onclick="closeSchedModal()" aria-label="Close modal">X</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="tab-bar" role="tablist">
+        <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="sched-tab-basic"
+                onclick="switchSchedTab('basic', this)">Basic</button>
+        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="sched-tab-schedule"
+                onclick="switchSchedTab('schedule', this)">Schedule</button>
+        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="sched-tab-destinations"
+                onclick="switchSchedTab('destinations', this)">Destinations</button>
+      </div>
+
+      <!-- Tab: Basic -->
+      <div id="sched-tab-basic" class="tab-panel active" role="tabpanel">
+        <div class="form-section">
+          <div class="form-section-title">Identity</div>
+          <div class="form-row">
+            <div class="form-group full-width">
+              <label for="sched-name">Schedule Name <span class="required" aria-label="required">*</span></label>
+              <input type="text" id="sched-name" placeholder="e.g. Project Files Daily Backup"
+                     autocomplete="off" spellcheck="false">
+            </div>
+          </div>
+          <div class="toggle-row">
+            <input type="checkbox" id="sched-enabled" checked>
+            <label for="sched-enabled">Enabled — schedule will run automatically</label>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">Backup Source</div>
+          <div class="form-row">
+            <div class="form-group full-width">
+              <label for="sched-source">Source Path <span class="required" aria-label="required">*</span></label>
+              <div class="path-input-row">
+                <input type="text" id="sched-source"
+                       placeholder="C:\Projects\MyApp  or  \\server\share\data"
+                       autocomplete="off" spellcheck="false">
+                <button class="btn btn-secondary btn-sm" type="button"
+                        onclick="browseSourcePath()" aria-label="Browse filesystem">Browse</button>
+                <button class="btn btn-ghost btn-sm" type="button"
+                        onclick="validateSourcePath()" aria-label="Validate path accessibility">Validate</button>
+              </div>
+              <div id="source-browser-wrap"></div>
+              <div id="source-validate-msg" class="form-hint" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="sched-source-cred">Network Credential</label>
+              <select id="sched-source-cred" aria-describedby="source-cred-hint">
+                <option value="">None (local path)</option>
+              </select>
+              <span class="form-hint" id="source-cred-hint">Required only for UNC \\server\share paths</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">Retention</div>
+          <div class="toggle-row">
+            <input type="checkbox" id="sched-delete-old">
+            <label for="sched-delete-old">
+              Delete previous backup files in each destination after a successful run
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: Schedule -->
+      <div id="sched-tab-schedule" class="tab-panel" role="tabpanel">
+        <div class="form-section">
+          <div class="form-section-title">Schedule Type</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="sched-type">Frequency</label>
+              <select id="sched-type" onchange="onScheduleTypeChange()" aria-controls="sc-config-fields">
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly (day of week)</option>
+                <option value="monthly">Monthly (day of month)</option>
+                <option value="interval">Every N days</option>
+                <option value="calendar">Calendar (specific dates)</option>
+              </select>
+            </div>
+          </div>
+          <div id="sc-config-fields" role="region" aria-label="Schedule configuration fields"></div>
+        </div>
+      </div>
+
+      <!-- Tab: Destinations -->
+      <div id="sched-tab-destinations" class="tab-panel" role="tabpanel">
+        <div style="margin-bottom:var(--gap-md)">
+          <p class="text-sm text-secondary" style="margin-bottom:var(--gap-sm)">
+            Each destination is independent — it has its own path, naming template, and extension.
+            The source is staged to a work directory, then distributed to all destinations simultaneously.
+          </p>
+          <button class="btn btn-secondary" type="button" onclick="addDestinationCard()">+ Add Destination</button>
+        </div>
+        <div id="dest-list" aria-label="Destination list"></div>
+      </div>
+
+    </div><!-- /modal-body -->
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="btn-modal-run-now"
+              style="display:none;margin-right:auto"
+              onclick="runNowFromModal()" aria-label="Run backup now">Run Now</button>
+      <button class="btn btn-danger" id="btn-modal-delete-sched"
+              style="display:none;margin-right:var(--gap-sm)"
+              onclick="schedDeleteFromModal()" aria-label="Delete schedule">Delete Schedule</button>
+      <button class="btn btn-ghost" onclick="closeSchedModal()">Cancel</button>
+      <button class="btn btn-primary" id="btn-save-sched" onclick="saveSchedule()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Run Detail Modal ─────────────────────────────────────────────── -->
+<div id="run-detail-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Run Details">
+  <div class="modal" style="width:min(780px,96vw)">
+    <div class="modal-header">
+      <span class="modal-title">Run Details</span>
+      <button class="modal-close" onclick="closeRunDetail()" aria-label="Close">X</button>
+    </div>
+    <div class="modal-body" id="run-detail-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeRunDetail()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Add Credential Modal ─────────────────────────────────────────── -->
+<div id="add-cred-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Add Credential">
+  <div class="modal" style="width:min(520px,96vw)">
+    <div class="modal-header">
+      <span class="modal-title">Add Network Credential</span>
+      <button class="modal-close" onclick="closeAddCredModal()" aria-label="Close">X</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-warning" role="note">
+        The credential is validated by attempting a real connection to the network path.
+        If validation succeeds, it is saved and available for use in schedules.
+      </div>
+      <div class="form-row">
+        <div class="form-group full-width">
+          <label for="cred-label">Label <span class="required" aria-label="required">*</span></label>
+          <input type="text" id="cred-label" placeholder="e.g. Office NAS" autocomplete="off">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group full-width">
+          <label for="cred-server">Server / Share Root <span class="required" aria-label="required">*</span></label>
+          <input type="text" id="cred-server" placeholder="\\server\share" autocomplete="off" spellcheck="false">
+          <span class="form-hint">UNC path root, e.g. \\172.16.0.10\data</span>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="cred-username">Username <span class="required" aria-label="required">*</span></label>
+          <input type="text" id="cred-username" placeholder="DOMAIN\username" autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="cred-password">Password <span class="required" aria-label="required">*</span></label>
+          <input type="password" id="cred-password" placeholder="Password" autocomplete="current-password">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group full-width">
+          <label for="cred-test-path">Validation Path</label>
+          <input type="text" id="cred-test-path" placeholder="Leave blank to use server path above"
+                 autocomplete="off" spellcheck="false">
+          <span class="form-hint">Optional: a specific path under the share to test access</span>
+        </div>
+      </div>
+      <div id="cred-validate-msg" class="form-hint" role="status" aria-live="polite"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeAddCredModal()">Cancel</button>
+      <button class="btn btn-primary" id="btn-save-cred" onclick="saveCredential()">Validate and Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Toast Container ──────────────────────────────────────────────── -->
+<div id="toast-container" role="region" aria-label="Notifications" aria-live="polite"></div>
+
+<!-- ================================================================= -->
+<!-- SCRIPTS                                                            -->
+<!-- ================================================================= -->
+<script src="js/api.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/schedules.js"></script>
+<script src="js/history.js"></script>
+<script src="js/credentials.js"></script>
+<script src="js/progress.js"></script>
+<script>
+// ─── Page Registration ─────────────────────────────────────────────────────────
+window.PAGE_INIT = {
+  dashboard:   initDashboard,
+  schedules:   initSchedules,
+  history:     () => { loadHistorySchedFilter(); initHistory(); },
+  credentials: initCredentials,
+  progress:    initProgress,
+};
+
+// ─── Schedule modal tab switcher ──────────────────────────────────────────────
+function switchSchedTab(tab, btn) {
+  document.querySelectorAll('#sched-modal .tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('#sched-modal .tab-btn').forEach(b => {
+    b.classList.remove('active');
+    b.setAttribute('aria-selected', 'false');
+  });
+  document.getElementById(`sched-tab-${tab}`).classList.add('active');
+  if (btn) {
+    btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
+  }
+}
+
+// ─── Source path browser ──────────────────────────────────────────────────────
+let _sourceBrowser = null;
+
+function toggleSourceBrowser() {
+  const wrap  = document.getElementById('source-browser-wrap');
+  const input = document.getElementById('sched-source');
+  if (_sourceBrowser) {
+    wrap.innerHTML = '';
+    _sourceBrowser = null;
+  } else {
+    _sourceBrowser = new PathBrowser(input, {});
+  }
+}
+
+async function validateSourcePath() {
+  const path   = document.getElementById('sched-source').value.trim();
+  const credId = document.getElementById('sched-source-cred').value || null;
+  const msgEl  = document.getElementById('source-validate-msg');
+  if (!path) {
+    msgEl.textContent = 'Enter a path first.';
+    msgEl.style.color = 'var(--color-error-text)';
+    return;
+  }
+  msgEl.textContent = 'Validating...';
+  msgEl.style.color = '';
+  try {
+    const r = await API.validatePath({ path, cred_id: credId });
+    if (r.accessible) {
+      msgEl.textContent = 'Path is accessible.';
+      msgEl.style.color = 'var(--color-success-text)';
+    } else {
+      msgEl.textContent = r.message;
+      msgEl.style.color = 'var(--color-error-text)';
+    }
+  } catch (e) {
+    msgEl.textContent = 'Validation error: ' + e.message;
+    msgEl.style.color = 'var(--color-error-text)';
+  }
+}
+
+// ─── Clock ────────────────────────────────────────────────────────────────────
+function updateClock() {
+  const el = document.getElementById('header-clock');
+  if (el) el.textContent = new Date().toLocaleTimeString(
+    undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }
+  );
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ─── Running indicator ────────────────────────────────────────────────────────
+async function refreshRunningIndicator() {
+  try {
+    const stats = await API.getStats();
+    const el  = document.getElementById('header-running');
+    const cnt = document.getElementById('header-running-count');
+    if (stats.running_now > 0) {
+      el.style.display = 'flex';
+      cnt.textContent  = stats.running_now;
+    } else {
+      el.style.display = 'none';
+    }
+  } catch { /* network may not be ready yet */ }
+}
+setInterval(refreshRunningIndicator, 5000);
+
+// ─── Close modal on backdrop click ───────────────────────────────────────────
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) {
+      overlay.classList.remove('open');
+    }
+  });
+});
+
+// ─── Keyboard: close modal on Escape ─────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+  }
+});
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  navigateTo('dashboard');
+  refreshRunningIndicator();
+});
+</script>
+</body>
+</html>

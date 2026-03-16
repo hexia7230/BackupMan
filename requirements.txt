@@ -1,0 +1,7 @@
+flask>=3.0.0
+flask-cors>=4.0.0
+apscheduler>=3.10.4
+pywin32>=306
+pyinstaller>=6.0.0
+pywebview>=4.0.0
+
