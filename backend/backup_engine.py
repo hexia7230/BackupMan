@@ -295,8 +295,8 @@ def run_backup(schedule_id: str, triggered_by: str = 'scheduler',
                 continue
 
             # Resolve output filename
-            template = dest.get('name_template') or '{name}_{date}_{id}.{ext}'
-            ext = dest.get('ext') or 'bak'
+            template = dest.get('name_template', '')
+            ext = dest.get('ext', '')
             name_context['seq'] = i + 1
             output_name = naming_engine.resolve(template, ext, name_context)
 

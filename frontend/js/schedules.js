@@ -230,7 +230,7 @@ function addDestinationCard(existing = null) {
       <div class="form-group full-width">
         <label>Name Template</label>
         <input type="text" id="dest-tpl-${n}" placeholder="{name}_{date}_{id}.{ext}"
-               value="${escHtml(d.name_template || '{name}_{date}_{id}.{ext}')}"
+               value="${escHtml(d.name_template !== undefined ? d.name_template : '')}"
                oninput="refreshDestPreview(${n})">
         <span class="form-hint">
           Placeholders: {name} {date} {datetime} {year} {month} {day} {time} {id} {seq} {source_name}
@@ -238,11 +238,6 @@ function addDestinationCard(existing = null) {
       </div>
     </div>
     <div class="form-row">
-      <div class="form-group">
-        <label>Extension (without dot)</label>
-        <input type="text" id="dest-ext-${n}" placeholder="bak" value="${escHtml(d.ext || 'bak')}"
-               style="max-width:120px" oninput="refreshDestPreview(${n})">
-      </div>
       <div class="form-group">
         <label>Custom label for {name}</label>
         <input type="text" id="dest-name-label-${n}" placeholder="backup"
@@ -270,18 +265,33 @@ function refreshDestPreview(n) {
   clearTimeout(_previewTimers[n]);
   _previewTimers[n] = setTimeout(async () => {
     const tplEl = document.getElementById(`dest-tpl-${n}`);
-    const extEl = document.getElementById(`dest-ext-${n}`);
     const nameEl = document.getElementById(`dest-name-label-${n}`);
     const prevEl = document.getElementById(`dest-preview-${n}`);
-    if (!tplEl || !extEl || !prevEl) return;
+    if (!tplEl || !prevEl) return;
 
     try {
+      // Allow empty string as a valid template value
+      const template = tplEl.value !== undefined ? tplEl.value : '{name}_{date}_{id}.{ext}';
+      
+      // Get source name from the source path input for better preview
+      let sourcePath = document.getElementById('sched-source')?.value || '';
+      // Remove trailing slash if present
+      sourcePath = sourcePath.replace(/[\\/]+$/, '');
+      const sourceName = sourcePath ? sourcePath.split(/[\\/]/).pop() : 'source';
+
       const result = await API.previewName({
-        template: tplEl.value || '{name}_{date}_{id}.{ext}',
-        ext: extEl.value || 'bak',
+        template: template,
+        ext: '',
         name: nameEl ? nameEl.value || 'backup' : 'backup',
+        source_name: sourceName
       });
-      prevEl.textContent = result.preview || '—';
+      if (result.preview && result.preview.trim()) {
+        prevEl.textContent = result.preview;
+      } else if (!template.trim()) {
+        prevEl.textContent = sourceName || 'Original Filename';
+      } else {
+        prevEl.textContent = '—';
+      }
     } catch (e) {
       prevEl.textContent = 'Preview error';
     }
@@ -361,12 +371,13 @@ function collectDestinations() {
   const cards = document.querySelectorAll('.dest-card');
   return Array.from(cards).map(card => {
     const n = card.id.replace('dest-card-', '');
+    const tplVal = document.getElementById(`dest-tpl-${n}`)?.value;
     return {
       dest_path:     document.getElementById(`dest-path-${n}`)?.value || '',
       dest_type:     document.getElementById(`dest-path-${n}`)?.value?.startsWith('\\\\') ? 'network' : 'local',
       dest_cred_id:  document.getElementById(`dest-cred-${n}`)?.value || null,
-      name_template: document.getElementById(`dest-tpl-${n}`)?.value || '{name}_{date}_{id}.{ext}',
-      ext:           document.getElementById(`dest-ext-${n}`)?.value || 'bak',
+      name_template: tplVal !== undefined ? tplVal : '',
+      ext:           '',
     };
   });
 }
@@ -422,3 +433,4 @@ async function saveSchedule() {
     saveBtn.textContent = 'Save';
   }
 }
+

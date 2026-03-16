@@ -28,11 +28,23 @@ def resolve(template: str, ext: str, context: dict) -> str:
     Resolve a naming template string.
 
     :param template: Template string, e.g. '{name}_{date}_{id}.{ext}'
-    :param ext:      File extension without leading dot, e.g. 'bak'
+                     If empty/whitespace → use original source filename unchanged.
+    :param ext:      File extension without leading dot, e.g. 'bak'.
+                     If empty → no extension is added even if {ext} is in template.
     :param context:  dict with optional keys: name, seq, source_name
     :return: Resolved filename string
     """
+    # ── Empty template → use original source name, no renaming ────────────────
+    if not template or not template.strip():
+        raw = context.get('source_name', 'source')
+        # Do NOT sanitize — preserve the exact original name (including extension)
+        return raw or 'source'
+
+    # ── Normalize ext: user may now enter '.bak' or 'bak' ────────────────────
+    ext = ext.lstrip('.') if ext else ''
+
     now = datetime.now()
+    has_ext_placeholder = '{ext}' in template
 
     replacements = {
         'name':        context.get('name', 'backup'),
@@ -52,11 +64,21 @@ def resolve(template: str, ext: str, context: dict) -> str:
     for key, value in replacements.items():
         result = result.replace('{' + key + '}', value)
 
-    # Ensure the extension is appended if not already
-    if not result.endswith('.' + ext):
-        result = result + '.' + ext
+    # ── If {ext} was used but ext is empty, strip the resulting trailing dot ──
+    if has_ext_placeholder:
+        if ext:
+            # Extension was specified — ensure it's appended if not already
+            if not result.endswith('.' + ext):
+                result = result + '.' + ext
+        else:
+            # No extension specified — remove any trailing dot left over
+            result = result.rstrip('.')
+    # If no {ext} placeholder → do not touch the extension at all
 
-    # Sanitize filename (remove unsafe characters)
+    # ── Sanitize filename (remove chars unsafe for Windows/Linux paths) ────────
     safe_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.()[] ')
     result = ''.join(c if c in safe_chars else '_' for c in result)
-    return result
+    # Strip leading/trailing dots and spaces that could cause issues
+    result = result.strip('. ')
+    return result or 'backup'
+

@@ -44,6 +44,9 @@ def serve_index():
 
 @app.route('/<path:path>')
 def serve_static(path):
+    # Never serve API paths as static files
+    if path.startswith('api/'):
+        return _err('Not found', 404)
     return send_from_directory(FRONTEND_DIR, path)
 
 
@@ -116,8 +119,8 @@ def create_schedule():
             dest['dest_path'],
             dest.get('dest_type', 'local'),
             dest.get('dest_cred_id'),
-            dest.get('name_template', '{name}_{date}_{id}.{ext}'),
-            dest.get('ext', 'bak'),
+            dest.get('name_template', ''),
+            dest.get('ext', ''),
             i
         ))
 
@@ -182,8 +185,8 @@ def update_schedule(sid):
             dest['dest_path'],
             dest.get('dest_type', 'local'),
             dest.get('dest_cred_id'),
-            dest.get('name_template', '{name}_{date}_{id}.{ext}'),
-            dest.get('ext', 'bak'),
+            dest.get('name_template', ''),
+            dest.get('ext', ''),
             i
         ))
 
@@ -379,8 +382,8 @@ def validate_path():
 @app.route('/api/preview-name', methods=['POST'])
 def preview_name():
     data = request.json or {}
-    template = data.get('template', '{name}_{date}_{id}.{ext}')
-    ext = data.get('ext', 'bak')
+    template = data.get('template', '')
+    ext = data.get('ext', '')
     context = {
         'name': data.get('name', 'backup'),
         'seq': data.get('seq', 1),
