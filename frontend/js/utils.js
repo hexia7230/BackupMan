@@ -121,6 +121,11 @@ const PAGE_INIT = {
 };
 
 function navigateTo(pageId) {
+  if (window._settingsConfigured === false && pageId !== 'settings') {
+    showToast('Create or import setting file first.', 'error');
+    return;
+  }
+
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 

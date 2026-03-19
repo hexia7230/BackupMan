@@ -11,7 +11,7 @@ import subprocess
 from datetime import datetime
 from flask import Flask, jsonify, request, send_from_directory
 
-from . import db, scheduler, backup_engine, network_handler, naming_engine
+from . import db, scheduler, backup_engine, network_handler, naming_engine, settings_manager
 
 # Path to the frontend directory
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), '..', 'frontend')
@@ -112,8 +112,8 @@ def create_schedule():
         conn.execute("""
             INSERT INTO destinations
               (id, schedule_id, dest_path, dest_type, dest_cred_id,
-               name_template, ext, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               name_template, ext, sort_order, compress_zip)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             str(uuid.uuid4()), sid,
             dest['dest_path'],
@@ -121,7 +121,8 @@ def create_schedule():
             dest.get('dest_cred_id'),
             dest.get('name_template', ''),
             dest.get('ext', ''),
-            i
+            i,
+            int(dest.get('compress_zip', False))
         ))
 
     conn.commit()
@@ -178,8 +179,8 @@ def update_schedule(sid):
         conn.execute("""
             INSERT INTO destinations
               (id, schedule_id, dest_path, dest_type, dest_cred_id,
-               name_template, ext, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               name_template, ext, sort_order, compress_zip)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             str(uuid.uuid4()), sid,
             dest['dest_path'],
@@ -187,7 +188,8 @@ def update_schedule(sid):
             dest.get('dest_cred_id'),
             dest.get('name_template', ''),
             dest.get('ext', ''),
-            i
+            i,
+            int(dest.get('compress_zip', False))
         ))
 
     conn.commit()
@@ -497,4 +499,117 @@ def browse_dialog():
         return _ok({'path': None})
     except Exception as e:
         return _err(f"Could not open folder dialog: {e}")
+
+@app.route('/api/open-file-dialog', methods=['GET'])
+def open_file_dialog():
+    ps_script = (
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "$d = New-Object System.Windows.Forms.OpenFileDialog; "
+        "$d.Filter = 'JSON Files (*.json)|*.json|All Files (*.*)|*.*'; "
+        "if ($d.ShowDialog() -eq 'OK') { $d.FileName } else { '' }"
+    )
+    try:
+        result = subprocess.run(
+            ['powershell', '-WindowStyle', 'Hidden', '-NonInteractive', '-Command', ps_script],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        path = result.stdout.strip()
+        return _ok({'path': path if path else None})
+    except subprocess.TimeoutExpired:
+        return _ok({'path': None})
+    except Exception as e:
+        return _err(f"Could not open file dialog: {e}")
+
+@app.route('/api/save-file-dialog', methods=['GET'])
+def save_file_dialog():
+    ps_script = (
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "$d = New-Object System.Windows.Forms.SaveFileDialog; "
+        "$d.Filter = 'JSON Files (*.json)|*.json'; "
+        "if ($d.ShowDialog() -eq 'OK') { $d.FileName } else { '' }"
+    )
+    try:
+        result = subprocess.run(
+            ['powershell', '-WindowStyle', 'Hidden', '-NonInteractive', '-Command', ps_script],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        path = result.stdout.strip()
+        return _ok({'path': path if path else None})
+    except subprocess.TimeoutExpired:
+        return _ok({'path': None})
+    except Exception as e:
+        return _err(f"Could not open file dialog: {e}")
+
+
+# ─── Settings Manager ─────────────────────────────────────────────────────────
+
+@app.route('/api/global-settings', methods=['GET'])
+def get_global_settings():
+    conn = db.get_conn()
+    rows = conn.execute("SELECT key, value FROM global_settings").fetchall()
+    settings = {row['key']: row['value'] for row in rows}
+    # Defaults
+    if 'incremental_only' not in settings:
+        settings['incremental_only'] = 'false'
+    if 'multi_thread' not in settings:
+        settings['multi_thread'] = 'false'
+    return _ok({'settings': settings})
+
+@app.route('/api/global-settings', methods=['POST'])
+def save_global_settings():
+    data = request.json or {}
+    conn = db.get_conn()
+    for k, v in data.items():
+        conn.execute("INSERT OR REPLACE INTO global_settings (key, value) VALUES (?, ?)", (k, str(v).lower()))
+    conn.commit()
+    return _ok()
+
+@app.route('/api/settings/status', methods=['GET'])
+def get_settings_status():
+    path = settings_manager.get_setting_path()
+    if path and os.path.exists(path):
+        return _ok({'configured': True, 'path': path})
+    return _ok({'configured': False, 'path': path})
+
+@app.route('/api/settings/create', methods=['POST'])
+def create_settings():
+    data = request.json or {}
+    path = data.get('path')
+    if not path:
+        return _err("Missing path")
+    settings_manager.clear_all_data()
+    settings_manager.set_setting_path(path)
+    settings_manager.dump_to_json(path)
+    return _ok({'path': path})
+
+@app.route('/api/settings/import', methods=['POST'])
+def import_settings():
+    data = request.json or {}
+    path = data.get('path')
+    if not path:
+        return _err("Missing path")
+    
+    if not os.path.exists(path):
+        return _err("File does not exist")
+        
+    success, msg = settings_manager.import_from_json(path)
+    if success:
+        settings_manager.set_setting_path(path)
+        return _ok({'path': path})
+    else:
+        return _err(f"Failed to import settings: {msg}")
+
+@app.route('/api/settings/export', methods=['POST'])
+def export_settings():
+    data = request.json or {}
+    path = data.get('path')
+    if not path:
+        return _err("Missing path")
+    settings_manager.dump_to_json(path)
+    return _ok({'path': path})
+
 

@@ -65,11 +65,20 @@ def main():
     init_db()
     logger.info('Database initialized.')
 
-    # 2. Scheduler
+    # 2. Settings Manager Initial Load
+    from backend import settings_manager
+    settings_manager.load_startup()
+    logger.info('Settings startup load checked.')
+
+    # 3. Scheduler
     sched_module.start()
     logger.info('Scheduler started.')
 
-    # 3. Flask in background thread
+    # 4. Settings Manager Sync
+    settings_manager.start_sync_thread()
+    logger.info('Settings sync thread started.')
+
+    # 5. Flask in background thread
     flask_thread = threading.Thread(target=_start_flask, name='flask', daemon=True)
     flask_thread.start()
     logger.info(f'Serving on {APP_URL}')

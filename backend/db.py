@@ -4,8 +4,14 @@ db.py - Database initialization and access layer (SQLite)
 import sqlite3
 import os
 import threading
+import sys
 
-DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'backupman.db')
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+DB_PATH = os.path.join(BASE_DIR, 'data', 'backupman.db')
 _local = threading.local()
 
 
@@ -50,7 +56,6 @@ def init_db():
         )
     """)
 
-    # --- Destinations (multiple per schedule) ---
     c.execute("""
         CREATE TABLE IF NOT EXISTS destinations (
             id          TEXT PRIMARY KEY,
@@ -60,7 +65,16 @@ def init_db():
             dest_cred_id TEXT,
             name_template TEXT NOT NULL DEFAULT '{name}_{date}_{id}.{ext}',
             ext         TEXT NOT NULL DEFAULT 'bak',
-            sort_order  INTEGER NOT NULL DEFAULT 0
+            sort_order  INTEGER NOT NULL DEFAULT 0,
+            compress_zip INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+
+    # --- Global Settings ---
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS global_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
         )
     """)
 
@@ -114,6 +128,12 @@ def init_db():
             recovered_at TEXT
         )
     """)
+
+    try:
+        c.execute("ALTER TABLE destinations ADD COLUMN compress_zip INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
 
     conn.commit()
     conn.close()

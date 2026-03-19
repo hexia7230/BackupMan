@@ -48,6 +48,14 @@
          onclick="navigateTo('credentials')" onkeydown="if(event.key==='Enter')navigateTo('credentials')">
       <i class="nav-icon" aria-hidden="true">[C]</i> Credentials
     </div>
+    <div class="nav-item" role="button" tabindex="0" data-page="settings"
+         onclick="navigateTo('settings')" onkeydown="if(event.key==='Enter')navigateTo('settings')">
+      <i class="nav-icon" aria-hidden="true">[T]</i> Settings
+    </div>
+    <div class="nav-item" role="button" tabindex="0" data-page="help"
+         onclick="navigateTo('help')" onkeydown="if(event.key==='Enter')navigateTo('help')">
+      <i class="nav-icon" aria-hidden="true">[?]</i> Help
+    </div>
 
     <div class="sidebar-footer" aria-label="App info">
       Backupman v1.0<br>
@@ -262,6 +270,8 @@
       </div>
     </section>
 
+
+
     <!-- ─── CREDENTIALS ───────────────────────────────────────────── -->
     <section id="page-credentials" class="page" aria-label="Network Credentials">
       <div class="page-header">
@@ -298,6 +308,74 @@
             <tr><td colspan="5"><div class="empty-state"><div class="empty-state-title">Loading...</div></div></td></tr>
           </tbody>
         </table>
+      </div>
+    </section>
+
+    <!-- ─── SETTINGS ──────────────────────────────────────────────── -->
+    <section id="page-settings" class="page" aria-label="Settings">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Settings</h1>
+          <div class="page-subtitle">Manage application configuration and setting file</div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">Data Save Location</div>
+        <p class="text-sm text-secondary" style="margin-bottom:var(--gap-md);">
+          Current Setting File: <strong id="current-setting-path" style="color:var(--text-main); word-break:break-all;">Loading...</strong>
+        </p>
+        
+        <div style="display:flex; gap:var(--gap-md);">
+          <button class="btn btn-secondary" onclick="exportSetting()">Export Settings</button>
+          <button class="btn btn-secondary" onclick="importSetting(true)">Import Settings</button>
+          <button class="btn btn-primary" onclick="createNewSetting(true)">Create New Setting</button>
+        </div>
+        <p class="text-sm text-secondary" style="margin-top:var(--gap-md);">
+          * Warning: Importing a setting file will overwrite all current schedules and destinations.
+        </p>
+      </div>
+    </section>
+
+    <!-- ─── HELP / DOCUMENTATION ────────────────────────────────────────── -->
+    <section id="page-help" class="page" aria-label="Help">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Help & Documentation</h1>
+          <div class="page-subtitle">How to use Backupman effectively</div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3 style="margin-bottom:var(--gap-sm);">1. How to use JSON Settings Files</h3>
+        <p style="color:var(--text-main); font-size:14px; line-height:1.6; margin-bottom:var(--gap-md);">
+          Backupman uses a JSON file to save all your schedules, history, and destinations. 
+          You can <b>Create New Setting</b> to start fresh, or <b>Export Settings</b> to save your configuration and move it to another PC.
+          <b>Importing</b> a setting file will overwrite your active data!
+        </p>
+
+        <h3 style="margin-bottom:var(--gap-sm);">2. Specifying Multiple Destinations</h3>
+        <p style="color:var(--text-main); font-size:14px; line-height:1.6; margin-bottom:var(--gap-md);">
+          You can add multiple backup destinations to a single schedule! Backupman will sequentially copy your source data to all listed destinations.
+          Click the "Add Destination" button inside the Schedule editor to add another location (such as an external drive AND a network share).
+        </p>
+
+        <h3 style="margin-bottom:var(--gap-sm);">3. Output Naming Conventions</h3>
+        <p style="color:var(--text-main); font-size:14px; line-height:1.6; margin-bottom:var(--gap-md);">
+          When configuring a destination, you can use <b>Name Templates</b> to dynamically name your backup files or folders. For example: <br>
+          <code>{name}</code> : The original name of the source (e.g. "my_data") <br>
+          <code>{date}</code> : Current date (e.g. "2026-03-19") <br>
+          <code>{time}</code> : Current time (e.g. "14-30-00") <br>
+          Template example: <code>{name}_{date}_{time}</code> becomes <code>my_data_2026-03-19_14-30-00.bak</code>
+        </p>
+
+        <h3 style="margin-bottom:var(--gap-sm);">4. Common Mistake: Folder Paths</h3>
+        <p style="color:var(--text-main); font-size:14px; line-height:1.6; margin-bottom:var(--gap-md);">
+          When backing up a folder, Backupman creates a new folder/file at the destination exactly as your template dictates. <br>
+          <b>Example Scenario:</b> You have a folder <code>test/files</code> and you want it backed up inside <code>test_backup/files</code>.<br>
+          <b>❌ Incorrect Way:</b> Setting destination path to <code>test_backup/files</code> and output name to <code>files</code>. This will result in <code>test_backup/files/files</code>!<br>
+          <b>✅ Correct Way:</b> Set destination path to <code>test_backup</code> and output name to <code>files</code>. Backupman will look at <code>test_backup</code>, create a folder named <code>files</code>, and then perfectly copy your data inside, giving you <code>test_backup/files</code>!
+        </p>
       </div>
     </section>
 
@@ -508,6 +586,7 @@
 <script src="js/history.js"></script>
 <script src="js/credentials.js"></script>
 <script src="js/progress.js"></script>
+<script src="js/settings.js"></script>
 <script>
 // ─── Page Registration ─────────────────────────────────────────────────────────
 window.PAGE_INIT = {
@@ -516,6 +595,8 @@ window.PAGE_INIT = {
   history:     () => { loadHistorySchedFilter(); initHistory(); },
   credentials: initCredentials,
   progress:    initProgress,
+  settings:    initSettings,
+  help:        () => {},
 };
 
 // ─── Schedule modal tab switcher ──────────────────────────────────────────────
@@ -615,9 +696,22 @@ document.addEventListener('keydown', e => {
 });
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  navigateTo('dashboard');
-  refreshRunningIndicator();
+document.addEventListener('DOMContentLoaded', async () => {
+  // Check settings status first before navigating anywhere
+  try {
+    const res = await API.getSettingsStatus();
+    if (res && res.configured) {
+      window._settingsConfigured = true;
+      navigateTo('dashboard');
+      refreshRunningIndicator();
+    } else {
+      window._settingsConfigured = false;
+      navigateTo('settings');
+      showToast('Create or import setting file first.', 'warning');
+    }
+  } catch (e) {
+    console.error("Failed to check settings status on boot.", e);
+  }
 });
 </script>
 </body>

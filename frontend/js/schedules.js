@@ -244,6 +244,10 @@ function addDestinationCard(existing = null) {
                value="${escHtml(d._name_label || '')}" oninput="refreshDestPreview(${n})">
       </div>
     </div>
+    <div class="toggle-row" style="margin-bottom:var(--gap-sm);">
+      <input type="checkbox" id="dest-zip-${n}" ${d.compress_zip ? 'checked' : ''} onchange="refreshDestPreview(${n})">
+      <label for="dest-zip-${n}">Compress to Zip file</label>
+    </div>
     <div class="form-group full-width">
       <label style="font-size:11px;color:var(--color-text-muted)">Preview</label>
       <div class="preview-box" id="dest-preview-${n}">—</div>
@@ -285,13 +289,20 @@ function refreshDestPreview(n) {
         name: nameEl ? nameEl.value || 'backup' : 'backup',
         source_name: sourceName
       });
+      let previewText = '';
       if (result.preview && result.preview.trim()) {
-        prevEl.textContent = result.preview;
+        previewText = result.preview;
       } else if (!template.trim()) {
-        prevEl.textContent = sourceName || 'Original Filename';
+        previewText = sourceName || 'Original Filename';
       } else {
-        prevEl.textContent = '—';
+        previewText = '—';
       }
+      
+      const isZip = document.getElementById(`dest-zip-${n}`)?.checked;
+      if (isZip && previewText !== '—' && !previewText.includes('.')) {
+        previewText += '.zip';
+      }
+      prevEl.textContent = previewText;
     } catch (e) {
       prevEl.textContent = 'Preview error';
     }
@@ -378,6 +389,7 @@ function collectDestinations() {
       dest_cred_id:  document.getElementById(`dest-cred-${n}`)?.value || null,
       name_template: tplVal !== undefined ? tplVal : '',
       ext:           '',
+      compress_zip:  document.getElementById(`dest-zip-${n}`)?.checked ? 1 : 0
     };
   });
 }

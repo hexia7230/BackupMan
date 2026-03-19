@@ -55,6 +55,15 @@ const API = {
   // --- Active Runs ---
   getActiveRuns:   ()          => apiFetch('GET',    '/api/active-runs'),
   cancelRun:       (id)        => apiFetch('POST',   `/api/active-runs/${id}/cancel`),
+
+  // --- Settings ---
+  getSettingsStatus: ()        => apiFetch('GET', '/api/settings/status'),
+  createSettings:    (path)    => apiFetch('POST', '/api/settings/create', {path}),
+  importSettings:    (path)    => apiFetch('POST', '/api/settings/import', {path}),
+  exportSettings:    (path)    => apiFetch('POST', '/api/settings/export', {path}),
+  openFileDialog:    ()        => apiFetch('GET', '/api/open-file-dialog'),
+  saveFileDialog:    ()        => apiFetch('GET', '/api/save-file-dialog'),
+
 };
 
 

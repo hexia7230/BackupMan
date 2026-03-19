@@ -126,7 +126,7 @@ def _delete_old_backups(dest_dir: str, name_prefix: str, current_filename: str):
         logger.warning(f"Could not list directory for cleanup {dest_dir}: {e}")
 
 
-def _copy_to_dest(staged_path: str, dest_path: str, output_name: str, stop_event: threading.Event = None) -> tuple[bool, str, int]:
+def _copy_to_dest(staged_path: str, dest_path: str, output_name: str, compress_zip: bool = False, stop_event: threading.Event = None) -> tuple[bool, str, int]:
     """
     Copy the staged source to the destination directory with the given output name.
     """
@@ -137,14 +137,28 @@ def _copy_to_dest(staged_path: str, dest_path: str, output_name: str, stop_event
         os.makedirs(dest_path, exist_ok=True)
         out_full = os.path.join(dest_path, output_name)
 
-        if os.path.isdir(staged_path):
-            if os.path.exists(out_full):
-                shutil.rmtree(out_full)
-            # For simplicity in this scale, we use copytree.
-            # In a real high-perf app, we'd loop files to check stop_event.
-            shutil.copytree(staged_path, out_full)
+        # Remove existing file/folder with the same name if exists
+        if os.path.exists(out_full):
+            shutil.rmtree(out_full) if os.path.isdir(out_full) else os.remove(out_full)
+
+        if compress_zip:
+            if stop_event and stop_event.is_set(): return False, "Cancelled", 0
+            if os.path.isdir(staged_path):
+                tmp_dir = os.path.dirname(staged_path)
+                tmp_archive_base = os.path.join(tmp_dir, f"tmp_zip_{uuid.uuid4().hex}")
+                shutil.make_archive(tmp_archive_base, 'zip', staged_path)
+                shutil.move(tmp_archive_base + '.zip', out_full)
+            else:
+                import zipfile
+                with zipfile.ZipFile(out_full, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    zf.write(staged_path, os.path.basename(staged_path))
         else:
-            shutil.copy2(staged_path, out_full)
+            if os.path.isdir(staged_path):
+                # For simplicity in this scale, we use copytree.
+                # In a real high-perf app, we'd loop files to check stop_event.
+                shutil.copytree(staged_path, out_full)
+            else:
+                shutil.copy2(staged_path, out_full)
 
         if stop_event and stop_event.is_set():
             # Clean up partial copy if cancelled
@@ -255,81 +269,105 @@ def run_backup(schedule_id: str, triggered_by: str = 'scheduler',
             _fail(f"Staging failed: {e}")
             return run_id
 
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         total_bytes = 0
         total_dests = len(dests)
         results = []
 
         source_name = os.path.basename(sched['source_path'].rstrip('/\\'))
-        name_context = {
+        name_context_base = {
             'name': sched['name'],
-            'seq': 1,
             'source_name': source_name,
         }
 
-        for i, dest in enumerate(dests):
+        def process_destination(i, dest):
             if stop_event.is_set():
-                _fail("Cancelled by user", 'missed')
-                return run_id
-
-            pct = 40 + int((i / max(total_dests, 1)) * 55)
-            _progress(f"Copying to destination {i + 1}/{total_dests}", pct)
+                return {'dest_id': dest['id'], 'ok': False, 'msg': 'Cancelled'}
 
             rdest_id = str(uuid.uuid4())
-            conn.execute(
+            # Use a new connection for each thread to avoid SQLite concurrency issues
+            thread_conn = db.get_conn() 
+            
+            thread_conn.execute(
                 """INSERT INTO run_destinations
                    (id, run_id, dest_id, dest_path, status)
                    VALUES (?, ?, ?, ?, 'running')""",
                 (rdest_id, run_id, dest['id'], dest['dest_path'])
             )
-            conn.commit()
+            thread_conn.commit()
 
-            # Connect to destination
-            ok2, msg2, _ = _ensure_connection(dest['dest_path'], dest.get('dest_cred_id'))
-            if not ok2:
-                conn.execute(
-                    """UPDATE run_destinations SET status='error', error_msg=? WHERE id=?""",
-                    (f"Destination connection failed: {msg2}", rdest_id)
+            try:
+                # 1. Connect to destination
+                ok2, msg2, _ = _ensure_connection(dest['dest_path'], dest.get('dest_cred_id'))
+                if not ok2:
+                    thread_conn.execute(
+                        "UPDATE run_destinations SET status='error', error_msg=? WHERE id=?",
+                        (f"Destination connection failed: {msg2}", rdest_id)
+                    )
+                    thread_conn.commit()
+                    return {'dest_id': dest['id'], 'ok': False, 'msg': msg2, 'size': 0}
+
+                # 2. Resolve output filename
+                local_context = name_context_base.copy()
+                local_context['seq'] = i + 1
+                template = dest.get('name_template', '')
+                ext = dest.get('ext', '')
+                output_name = naming_engine.resolve(template, ext, local_context)
+                
+                compress_zip = dest.get('compress_zip', 0) == 1
+                if compress_zip and '.' not in output_name:
+                    output_name += '.zip'
+
+                # 3. Copy staged to destination
+                ok3, err3, size3 = _copy_to_dest(staged, dest['dest_path'], output_name, compress_zip, stop_event)
+
+                if stop_event.is_set():
+                    return {'dest_id': dest['id'], 'ok': False, 'msg': 'Cancelled', 'size': 0}
+
+                # 4. Delete old if requested
+                if sched['delete_old'] and ok3:
+                    name_prefix = local_context.get('name', 'backup')
+                    _delete_old_backups(dest['dest_path'], name_prefix, output_name)
+
+                # 5. Update DB
+                status = 'success' if ok3 else 'error'
+                thread_conn.execute(
+                    """UPDATE run_destinations
+                       SET status=?, output_name=?, bytes_copied=?, error_msg=?
+                       WHERE id=?""",
+                    (status, output_name, size3, err3 if not ok3 else None, rdest_id)
                 )
-                conn.commit()
-                results.append({'dest_id': dest['id'], 'ok': False, 'msg': msg2})
-                continue
+                thread_conn.commit()
+                return {'dest_id': dest['id'], 'ok': ok3, 'msg': err3, 'size': size3, 'output_name': output_name}
+            except Exception as e:
+                return {'dest_id': dest['id'], 'ok': False, 'msg': str(e), 'size': 0}
 
-            # Resolve output filename
-            template = dest.get('name_template', '')
-            ext = dest.get('ext', '')
-            name_context['seq'] = i + 1
-            output_name = naming_engine.resolve(template, ext, name_context)
+        # Execute destinations in parallel (up to 4 at a time to not over-tax disk/network)
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_dest = {executor.submit(process_destination, i, d): d for i, d in enumerate(dests)}
+            
+            completed_count = 0
+            for future in as_completed(future_to_dest):
+                res = future.result()
+                results.append(res)
+                total_bytes += res.get('size', 0)
+                completed_count += 1
+                
+                pct = 40 + int((completed_count / max(total_dests, 1)) * 55)
+                _progress(f"Processed destinations: {completed_count}/{total_dests}", pct)
 
-            # Copy staged to destination
-            ok3, err3, size3 = _copy_to_dest(staged, dest['dest_path'], output_name, stop_event)
-            total_bytes += size3
-
-            if stop_event.is_set():
-                _fail("Cancelled by user", 'missed')
-                return run_id
-
-            # Delete old if requested
-            if sched['delete_old'] and ok3:
-                name_prefix = name_context.get('name', 'backup')
-                _delete_old_backups(dest['dest_path'], name_prefix, output_name)
-
-            status = 'success' if ok3 else 'error'
-            conn.execute(
-                """UPDATE run_destinations
-                   SET status=?, output_name=?, bytes_copied=?, error_msg=?
-                   WHERE id=?""",
-                (status, output_name, size3, err3 if not ok3 else None, rdest_id)
-            )
-            conn.commit()
-            results.append({'dest_id': dest['id'], 'ok': ok3, 'msg': err3, 'output_name': output_name})
+        if stop_event.is_set():
+            _fail("Cancelled by user", 'missed')
+            return run_id
 
         _progress("Cleaning staging area", 97)
         _cleanup()
         _progress("Done", 100)
 
         # --- Finalize run record ---
-        final_status = 'success' if all(r['ok'] for r in results) else 'error'
-        all_err = '; '.join(r['msg'] for r in results if not r['ok']) or None
+        final_status = 'success' if all(r.get('ok', False) for r in results) else 'error'
+        all_err = '; '.join(str(r.get('msg', 'Error')) for r in results if not r.get('ok')) or None
         conn.execute(
             """UPDATE run_history
                SET status=?, finished_at=?, bytes_copied=?, error_msg=?
